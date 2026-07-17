@@ -1,0 +1,150 @@
+-- ╔═══════════════════════════════════════════════════════════════╗
+-- ║     Iron Soul Dungeon — Wiki Markup Table Generator          ║
+-- ║     Helmets · Armor · Scrolls · Weapons                     ║
+-- ╚═══════════════════════════════════════════════════════════════╝
+
+local configs = game:GetService("ReplicatedStorage"):FindFirstChild("Configs")
+local ResArmor, ResScrolls, ResWeapon
+
+pcall(function() ResArmor   = require(configs.ResArmor)   end)
+pcall(function() ResScrolls = require(configs.ResScrolls) end)
+pcall(function() ResWeapon  = require(configs.ResWeapon)  end)
+
+local RARITY_NAME = {
+    [1]="Common",[2]="Uncommon",[3]="Rare",
+    [4]="Epic",[5]="Legendary",[6]="Mythic",
+}
+
+local function getRarity(r) return RARITY_NAME[tonumber(r)] or tostring(r) end
+
+-- ── Sort helpers ──────────────────────────────────────────────────────────────
+local function sortedItems(data, filterFn, sortFn)
+    local list = {}
+    for k, v in pairs(data) do
+        if type(v)=="table" and v.ID and (not filterFn or filterFn(v)) then
+            table.insert(list, v)
+        end
+    end
+    table.sort(list, sortFn or function(a,b)
+        if (a.T or 0) ~= (b.T or 0) then return (a.T or 0) < (b.T or 0) end
+        return (a.ID or "") < (b.ID or "")
+    end)
+    return list
+end
+
+-- ── Wiki table builder ────────────────────────────────────────────────────────
+local function wikiHeader(title)
+    return "== "..title.." ==\n"
+end
+
+local function wikiTableStart(headers)
+    local t = '{| class="wikitable sortable"\n'
+    t = t .. "|-\n"
+    for _, h in ipairs(headers) do
+        t = t .. "! "..h.."\n"
+    end
+    return t
+end
+
+local function wikiTableEnd()
+    return "|}\n"
+end
+
+local function wikiRow(cells)
+    local t = "|-\n"
+    for _, c in ipairs(cells) do
+        t = t .. "| "..tostring(c).."\n"
+    end
+    return t
+end
+
+-- ── Build all tables ──────────────────────────────────────────────────────────
+local result = ""
+
+-- HELMETS
+result = result .. wikiHeader("Helmets")
+result = result .. wikiTableStart({"ID","Tier","HP","HP Max","Price","Weight","Size","Special"})
+local helmets = sortedItems(ResArmor, function(v) return v.Class=="Helmet" end)
+for _, v in ipairs(helmets) do
+    result = result .. wikiRow({
+        v.ID or "?",
+        "T"..(v.T or "?"),
+        v.HP or "?",
+        v.HPMax or "?",
+        v.Price or "?",
+        v.BaseWeight or "?",
+        v.Size or "?",
+        v.IsSpecial and "Yes" or "No",
+    })
+end
+result = result .. wikiTableEnd()
+result = result .. "\n"
+
+-- BREASTPLATES
+result = result .. wikiHeader("Breastplates")
+result = result .. wikiTableStart({"ID","Tier","HP","HP Max","Price","Weight","Size","Special"})
+local breastplates = sortedItems(ResArmor, function(v) return v.Class=="Breastplate" end)
+for _, v in ipairs(breastplates) do
+    result = result .. wikiRow({
+        v.ID or "?",
+        "T"..(v.T or "?"),
+        v.HP or "?",
+        v.HPMax or "?",
+        v.Price or "?",
+        v.BaseWeight or "?",
+        v.Size or "?",
+        v.IsSpecial and "Yes" or "No",
+    })
+end
+result = result .. wikiTableEnd()
+result = result .. "\n"
+
+-- SCROLLS
+result = result .. wikiHeader("Scrolls")
+result = result .. wikiTableStart({"ID","Weapon Class","Skill","Rarity","Power","Price"})
+local scrolls = sortedItems(ResScrolls, nil, function(a,b)
+    if (a.WeaponClass or "") ~= (b.WeaponClass or "") then
+        return (a.WeaponClass or "") < (b.WeaponClass or "")
+    end
+    return (a.Power or 0) < (b.Power or 0)
+end)
+for _, v in ipairs(scrolls) do
+    result = result .. wikiRow({
+        v.ID or "?",
+        v.WeaponClass or "?",
+        v.SkillId or "?",
+        getRarity(v.Rarity),
+        v.Power or "?",
+        v.Price or "?",
+    })
+end
+result = result .. wikiTableEnd()
+result = result .. "\n"
+
+-- WEAPONS (split by class)
+local weaponClasses = {"Sword","Heavy","Staff","Bow","Fist","DualWield"}
+for _, class in ipairs(weaponClasses) do
+    local weapons = sortedItems(ResWeapon, function(v) return v.Class==class end)
+    if #weapons > 0 then
+        result = result .. wikiHeader(class.." Weapons")
+        result = result .. wikiTableStart({"ID","Tier","Attack Damage","Price","Weight","Blueprint","Special"})
+        for _, v in ipairs(weapons) do
+            -- skip obvious test/dev items
+            if v.ID == "SuperHanBro" or v.ID == "Sword_Test" then continue end
+            result = result .. wikiRow({
+                v.ID or "?",
+                "T"..(v.T or "?"),
+                v.AttackDamage or "?",
+                v.Price or "?",
+                v.BaseWeight or "?",
+                v.Blueprint and "Yes" or "No",
+                v.IsSpecial and "Yes" or "No",
+            })
+        end
+        result = result .. wikiTableEnd()
+        result = result .. "\n"
+    end
+end
+
+setclipboard(result)
+print("Wiki markup copied! Total length: " .. #result)
