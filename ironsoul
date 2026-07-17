@@ -1,560 +1,181 @@
 -- ╔═══════════════════════════════════════════════════════════════╗
--- ║     Iron Soul Dungeon — Item Viewer                          ║
--- ║     Armors · Helmets · Scrolls · Weapons                    ║
+-- ║     Iron Soul Dungeon — Wiki Markup Table Generator v2       ║
+-- ║     Helmets · Armor · Scrolls · Weapons                     ║
 -- ╚═══════════════════════════════════════════════════════════════╝
 
-local Players          = game:GetService("Players")
-local TweenService     = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
-local lp               = Players.LocalPlayer
-local pg               = lp:WaitForChild("PlayerGui")
+local rs = game:GetService("ReplicatedStorage")
+local configs = rs:FindFirstChild("Configs")
 
-if pg:FindFirstChild("IRSItemViewer") then pg:FindFirstChild("IRSItemViewer"):Destroy() end
+-- Debug: check what's available
+local debugInfo = ""
+if not configs then
+    -- Try finding configs anywhere in RS
+    for _, v in pairs(rs:GetChildren()) do
+        debugInfo = debugInfo .. v.Name .. " [" .. v.ClassName .. "]\n"
+    end
+    setclipboard("Configs not found! RS children:\n" .. debugInfo)
+    print("Configs not found!")
+    return
+end
 
--- ── Load modules ──────────────────────────────────────────────────────────────
-local configs = game:GetService("ReplicatedStorage"):FindFirstChild("Configs")
+debugInfo = "Configs found! Children:\n"
+for _, v in pairs(configs:GetChildren()) do
+    debugInfo = debugInfo .. v.Name .. " [" .. v.ClassName .. "]\n"
+end
+
 local ResArmor, ResScrolls, ResWeapon
+local armorOk, armorErr = pcall(function() ResArmor = require(configs.ResArmor) end)
+local scrollOk, scrollErr = pcall(function() ResScrolls = require(configs.ResScrolls) end)
+local weaponOk, weaponErr = pcall(function() ResWeapon = require(configs.ResWeapon) end)
 
-pcall(function() ResArmor   = require(configs.ResArmor)   end)
-pcall(function() ResScrolls = require(configs.ResScrolls) end)
-pcall(function() ResWeapon  = require(configs.ResWeapon)  end)
+debugInfo = debugInfo .. "\nResArmor loaded: " .. tostring(armorOk) .. " " .. tostring(armorErr) .. "\n"
+debugInfo = debugInfo .. "ResScrolls loaded: " .. tostring(scrollOk) .. " " .. tostring(scrollErr) .. "\n"
+debugInfo = debugInfo .. "ResWeapon loaded: " .. tostring(weaponOk) .. " " .. tostring(weaponErr) .. "\n"
 
--- ── Rarity config ─────────────────────────────────────────────────────────────
+if not ResArmor and not ResScrolls and not ResWeapon then
+    setclipboard(debugInfo)
+    print("All modules failed to load!")
+    return
+end
+
 local RARITY_NAME = {
-    [1]="Common", [2]="Uncommon", [3]="Rare",
-    [4]="Epic",   [5]="Legendary",[6]="Mythic",
-}
-local RARITY_COLOR = {
-    Common=Color3.fromRGB(180,180,180),   Uncommon=Color3.fromRGB(60,200,100),
-    Rare=Color3.fromRGB(80,150,255),      Epic=Color3.fromRGB(180,100,255),
-    Legendary=Color3.fromRGB(255,200,50), Mythic=Color3.fromRGB(255,80,80),
-}
-local RARITY_BG = {
-    Common=Color3.fromRGB(50,50,50),      Uncommon=Color3.fromRGB(20,60,30),
-    Rare=Color3.fromRGB(20,40,80),        Epic=Color3.fromRGB(50,20,80),
-    Legendary=Color3.fromRGB(80,65,10),   Mythic=Color3.fromRGB(80,15,15),
+    [1]="Common",[2]="Uncommon",[3]="Rare",
+    [4]="Epic",[5]="Legendary",[6]="Mythic",
 }
 
-local function getRarityName(r)
-    return RARITY_NAME[tonumber(r)] or tostring(r)
-end
+local function getRarity(r) return RARITY_NAME[tonumber(r)] or tostring(r) end
 
--- ── Theme ─────────────────────────────────────────────────────────────────────
-local C = {
-    BG=Color3.fromRGB(13,13,18),      Panel=Color3.fromRGB(20,20,28),
-    Card=Color3.fromRGB(26,26,38),    Sidebar=Color3.fromRGB(16,16,24),
-    Accent=Color3.fromRGB(100,140,255),Green=Color3.fromRGB(50,200,100),
-    Red=Color3.fromRGB(210,60,60),    Text=Color3.fromRGB(235,235,255),
-    Sub=Color3.fromRGB(120,120,155),  Border=Color3.fromRGB(40,40,60),
-    Gold=Color3.fromRGB(255,200,50),  Row=Color3.fromRGB(22,22,34),
-    RowAlt=Color3.fromRGB(18,18,28),
-}
-
--- class colors
-local CLASS_COLOR = {
-    Helmet=Color3.fromRGB(80,150,255),
-    Breastplate=Color3.fromRGB(60,200,100),
-    Sword=Color3.fromRGB(255,140,80),
-    Heavy=Color3.fromRGB(255,80,80),
-    Staff=Color3.fromRGB(180,100,255),
-    Bow=Color3.fromRGB(100,220,180),
-    Fist=Color3.fromRGB(255,200,50),
-    DualWield=Color3.fromRGB(255,120,200),
-}
-local CLASS_ICON = {
-    Helmet="🪖", Breastplate="🛡️", Sword="⚔️",
-    Heavy="🪓", Staff="🪄", Bow="🏹",
-    Fist="👊", DualWield="🗡️",
-}
-
--- ── GUI Root ──────────────────────────────────────────────────────────────────
-local sg = Instance.new("ScreenGui", pg)
-sg.Name="IRSItemViewer" sg.ResetOnSpawn=false sg.ZIndexBehavior=Enum.ZIndexBehavior.Sibling
-
-local Win = Instance.new("Frame", sg)
-Win.Size=UDim2.new(0,580,0,540) Win.Position=UDim2.new(0.5,-290,0.5,-270)
-Win.BackgroundColor3=C.BG Win.BorderSizePixel=0 Win.ClipsDescendants=true
-Instance.new("UICorner",Win).CornerRadius=UDim.new(0,12)
-Instance.new("UIStroke",Win).Color=C.Border
-
--- Topbar
-local TB=Instance.new("Frame",Win)
-TB.Size=UDim2.new(1,0,0,44) TB.BackgroundColor3=C.Panel TB.BorderSizePixel=0 TB.ZIndex=10
-
-local tdot=Instance.new("Frame",TB)
-tdot.Size=UDim2.new(0,10,0,10) tdot.Position=UDim2.new(0,12,0.5,-5)
-tdot.BackgroundColor3=C.Accent tdot.BorderSizePixel=0
-Instance.new("UICorner",tdot).CornerRadius=UDim.new(1,0)
-
-local function tl(t,sz,col,x,y)
-    local l=Instance.new("TextLabel",TB) l.Size=UDim2.new(0,380,0,sz+4)
-    l.Position=UDim2.new(0,x,0,y) l.BackgroundTransparency=1 l.Text=t
-    l.TextColor3=col l.TextSize=sz l.Font=Enum.Font.GothamBold
-    l.TextXAlignment=Enum.TextXAlignment.Left
-end
-tl("⚔️ Iron Soul Dungeon — Item Viewer",14,C.Text,28,5)
-tl("Armors · Helmets · Scrolls · Weapons",10,C.Sub,28,23)
-
-local function topBtn(xo,bg,t)
-    local b=Instance.new("TextButton",TB)
-    b.Size=UDim2.new(0,26,0,26) b.Position=UDim2.new(1,xo,0.5,-13)
-    b.BackgroundColor3=bg b.Text=t b.TextColor3=Color3.new(1,1,1)
-    b.TextSize=13 b.Font=Enum.Font.GothamBold b.BorderSizePixel=0 b.ZIndex=11
-    Instance.new("UICorner",b).CornerRadius=UDim.new(0,5) return b
-end
-topBtn(-10,C.Red,"✕").MouseButton1Click:Connect(function() sg:Destroy() end)
-local minBtn=topBtn(-42,Color3.fromRGB(40,40,60),"−")
-
-local Body=Instance.new("Frame",Win)
-Body.Size=UDim2.new(1,0,1,-44) Body.Position=UDim2.new(0,0,0,44) Body.BackgroundTransparency=1
-local isMin=false
-minBtn.MouseButton1Click:Connect(function()
-    isMin=not isMin Body.Visible=not isMin
-    TweenService:Create(Win,TweenInfo.new(0.2),{Size=isMin and UDim2.new(0,580,0,44) or UDim2.new(0,580,0,540)}):Play()
-    minBtn.Text=isMin and "+" or "−"
-end)
-
--- ── Sidebar tabs ──────────────────────────────────────────────────────────────
-local SB=Instance.new("Frame",Body)
-SB.Size=UDim2.new(0,110,1,0) SB.BackgroundColor3=C.Sidebar SB.BorderSizePixel=0
-local sbl=Instance.new("UIListLayout",SB)
-sbl.Padding=UDim.new(0,4) sbl.SortOrder=Enum.SortOrder.LayoutOrder
-Instance.new("UIPadding",SB).PaddingTop=UDim.new(0,8)
-
-local function sideTab(lbl,icon,order)
-    local b=Instance.new("TextButton",SB)
-    b.Size=UDim2.new(1,-8,0,38) b.BackgroundColor3=C.Card b.Text="" b.BorderSizePixel=0 b.LayoutOrder=order
-    Instance.new("UICorner",b).CornerRadius=UDim.new(0,7)
-    local i=Instance.new("TextLabel",b) i.Size=UDim2.new(0,26,1,0) i.Position=UDim2.new(0,6,0,0)
-    i.BackgroundTransparency=1 i.Text=icon i.TextSize=15 i.Font=Enum.Font.Gotham i.TextColor3=C.Text
-    local t=Instance.new("TextLabel",b) t.Size=UDim2.new(1,-36,1,0) t.Position=UDim2.new(0,36,0,0)
-    t.BackgroundTransparency=1 t.Text=lbl t.TextSize=11 t.Font=Enum.Font.GothamBold t.TextColor3=C.Sub
-    t.TextXAlignment=Enum.TextXAlignment.Left return b,t
-end
-
-local helmetTab,helmetTabL     = sideTab("Helmets","🪖",1)
-local armorTab,armorTabL       = sideTab("Armor","🛡️",2)
-local scrollTab,scrollTabL     = sideTab("Scrolls","📜",3)
-local weaponTab,weaponTabL     = sideTab("Weapons","⚔️",4)
-
--- stats card
-local statsCard=Instance.new("Frame",SB)
-statsCard.Size=UDim2.new(1,-8,0,70) statsCard.BackgroundColor3=C.Card
-statsCard.BorderSizePixel=0 statsCard.LayoutOrder=10
-Instance.new("UICorner",statsCard).CornerRadius=UDim.new(0,7)
-
-local function statLbl(t,sz,y,col)
-    local l=Instance.new("TextLabel",statsCard) l.Size=UDim2.new(1,-8,0,14)
-    l.Position=UDim2.new(0,6,0,y) l.BackgroundTransparency=1 l.Text=t
-    l.TextColor3=col or C.Sub l.TextSize=sz l.Font=Enum.Font.Gotham
-    l.TextXAlignment=Enum.TextXAlignment.Left return l
-end
-local countLbl  = statLbl("Items: --",9,6)
-local filterLbl = statLbl("Filter: All",8,22)
-local sortLbl   = statLbl("Sort: Default",8,38)
-local tierLbl   = statLbl("Tier: All",8,54)
-
--- Content area
-local CT=Instance.new("Frame",Body)
-CT.Size=UDim2.new(1,-118,1,-8) CT.Position=UDim2.new(0,114,0,4) CT.BackgroundTransparency=1
-
-local function makePage()
-    local f=Instance.new("Frame",CT) f.Size=UDim2.new(1,0,1,0) f.BackgroundTransparency=1 f.Visible=false return f
-end
-
--- ── UI helpers ────────────────────────────────────────────────────────────────
-local function abtn(p,t,y,bg,h,w)
-    local b=Instance.new("TextButton",p)
-    b.Size=UDim2.new(w or 1,0,0,h or 26)
-    b.Position=UDim2.new(0,0,0,y) b.BackgroundColor3=bg or C.Accent b.Text=t
-    b.TextColor3=Color3.new(1,1,1) b.TextSize=10 b.Font=Enum.Font.GothamBold b.BorderSizePixel=0
-    Instance.new("UICorner",b).CornerRadius=UDim.new(0,6) return b
-end
-
-local function makeSearchBar(parent, y, onChanged)
-    local bg=Instance.new("Frame",parent)
-    bg.Size=UDim2.new(1,0,0,28) bg.Position=UDim2.new(0,0,0,y)
-    bg.BackgroundColor3=C.Card bg.BorderSizePixel=0
-    Instance.new("UICorner",bg).CornerRadius=UDim.new(0,7)
-    Instance.new("UIStroke",bg).Color=C.Border
-    local tb=Instance.new("TextBox",bg)
-    tb.Size=UDim2.new(1,-12,1,0) tb.Position=UDim2.new(0,6,0,0)
-    tb.BackgroundTransparency=1 tb.Text="" tb.PlaceholderText="🔍 Search..."
-    tb.PlaceholderColor3=C.Sub tb.TextColor3=C.Text
-    tb.TextSize=11 tb.Font=Enum.Font.Gotham
-    tb.TextXAlignment=Enum.TextXAlignment.Left tb.ClearTextOnFocus=false
-    tb:GetPropertyChangedSignal("Text"):Connect(function() onChanged(tb.Text) end)
-    return bg, tb
-end
-
-local function makeRarityBadge(parent, rarityNum)
-    local rName = getRarityName(rarityNum)
-    local col   = RARITY_COLOR[rName] or C.Sub
-    local bg2   = RARITY_BG[rName] or C.Card
-    local badge=Instance.new("TextLabel",parent)
-    badge.Size=UDim2.new(0,72,0,17) badge.BackgroundColor3=bg2 badge.BorderSizePixel=0
-    badge.Text=rName badge.TextColor3=col badge.TextSize=9 badge.Font=Enum.Font.GothamBold
-    Instance.new("UICorner",badge).CornerRadius=UDim.new(0,8)
-    local s=Instance.new("UIStroke",badge) s.Color=col s.Thickness=1
-    return badge
-end
-
--- ── Generic scrollable item list ──────────────────────────────────────────────
-local function buildListPage(data, columns, rowBuilder, defaultSort)
-    local page = makePage()
-
-    -- search bar
-    local searchText = ""
-    local _, searchTb = makeSearchBar(page, 0, function(txt) searchText = txt end)
-
-    -- filter/sort bar
-    local filterBar=Instance.new("Frame",page)
-    filterBar.Size=UDim2.new(1,0,0,26) filterBar.Position=UDim2.new(0,0,0,32)
-    filterBar.BackgroundTransparency=1 filterBar.BorderSizePixel=0
-    local filterLayout=Instance.new("UIListLayout",filterBar)
-    filterLayout.FillDirection=Enum.FillDirection.Horizontal filterLayout.Padding=UDim.new(0,3)
-
-    -- table header
-    local headerFrame=Instance.new("Frame",page)
-    headerFrame.Size=UDim2.new(1,0,0,24) headerFrame.Position=UDim2.new(0,0,0,62)
-    headerFrame.BackgroundColor3=C.Panel headerFrame.BorderSizePixel=0
-    Instance.new("UICorner",headerFrame).CornerRadius=UDim.new(0,6)
-
-    local xOff = 0
-    for _, col in ipairs(columns) do
-        local lbl=Instance.new("TextLabel",headerFrame)
-        lbl.Size=UDim2.new(0,col.w,1,0) lbl.Position=UDim2.new(0,xOff,0,0)
-        lbl.BackgroundTransparency=1 lbl.Text=col.name
-        lbl.TextColor3=C.Sub lbl.TextSize=9 lbl.Font=Enum.Font.GothamBold
-        lbl.TextXAlignment=Enum.TextXAlignment.Left
-        xOff = xOff + col.w
-    end
-
-    -- scroll area
-    local bg=Instance.new("Frame",page) bg.Size=UDim2.new(1,0,0,400)
-    bg.Position=UDim2.new(0,0,0,90) bg.BackgroundColor3=C.Card
-    bg.BorderSizePixel=0 bg.ClipsDescendants=true
-    Instance.new("UICorner",bg).CornerRadius=UDim.new(0,8)
-    Instance.new("UIStroke",bg).Color=C.Border
-
-    local sc=Instance.new("ScrollingFrame",bg)
-    sc.Size=UDim2.new(1,-4,1,-4) sc.Position=UDim2.new(0,2,0,2)
-    sc.BackgroundTransparency=1 sc.BorderSizePixel=0
-    sc.ScrollBarThickness=2 sc.ScrollBarImageColor3=C.Accent
-    local lay=Instance.new("UIListLayout",sc)
-    lay.Padding=UDim.new(0,1) lay.SortOrder=Enum.SortOrder.LayoutOrder
-
-    local allItems = {}
+local function sortedItems(data, filterFn, sortFn)
+    local list = {}
     for k, v in pairs(data) do
-        if type(v)=="table" and v.ID then
-            table.insert(allItems, v)
+        if type(v)=="table" and v.ID and (not filterFn or filterFn(v)) then
+            table.insert(list, v)
         end
     end
+    table.sort(list, sortFn or function(a,b)
+        if (a.T or 0) ~= (b.T or 0) then return (a.T or 0) < (b.T or 0) end
+        return (a.ID or "") < (b.ID or "")
+    end)
+    return list
+end
 
-    local activeFilters = {}
-    local sortMode = defaultSort or "default"
+local function wikiHeader(title)
+    return "== "..title.." ==\n"
+end
 
-    local function refresh()
-        for _, child in pairs(sc:GetChildren()) do
-            if child:IsA("Frame") then child:Destroy() end
-        end
-
-        -- filter + search
-        local filtered = {}
-        for _, item in ipairs(allItems) do
-            local txt = searchText:lower()
-            local nameMatch = item.ID:lower():find(txt, 1, true) or txt==""
-            local classMatch = next(activeFilters)==nil or activeFilters[item.Class or item.WeaponClass or ""]
-            if nameMatch and classMatch then
-                table.insert(filtered, item)
-            end
-        end
-
-        -- sort
-        if sortMode=="hp_asc" then
-            table.sort(filtered, function(a,b) return (a.HP or a.AttackDamage or 0) < (b.HP or b.AttackDamage or 0) end)
-        elseif sortMode=="hp_desc" then
-            table.sort(filtered, function(a,b) return (a.HP or a.AttackDamage or 0) > (b.HP or b.AttackDamage or 0) end)
-        elseif sortMode=="price_asc" then
-            table.sort(filtered, function(a,b) return (a.Price or 0) < (b.Price or 0) end)
-        elseif sortMode=="price_desc" then
-            table.sort(filtered, function(a,b) return (a.Price or 0) > (b.Price or 0) end)
-        elseif sortMode=="tier" then
-            table.sort(filtered, function(a,b) return (a.T or 0) < (b.T or 0) end)
-        elseif sortMode=="rarity" then
-            table.sort(filtered, function(a,b) return (a.Rarity or 0) < (b.Rarity or 0) end)
-        end
-
-        for i, item in ipairs(filtered) do
-            rowBuilder(sc, item, i)
-        end
-        sc.CanvasSize = UDim2.new(0,0,0,#filtered*30+4)
-        countLbl.Text = "Items: "..#filtered.."/"..#allItems
-        filterLbl.Text = "Filter: "..(next(activeFilters) and table.concat((function() local t={} for k in pairs(activeFilters) do table.insert(t,k) end return t end)(),",") or "All")
-        sortLbl.Text = "Sort: "..sortMode
+local function wikiTableStart(headers)
+    local t = '{| class="wikitable sortable"\n'
+    t = t .. "|-\n"
+    for _, h in ipairs(headers) do
+        t = t .. "! "..h.."\n"
     end
+    return t
+end
 
-    searchTb:GetPropertyChangedSignal("Text"):Connect(refresh)
+local function wikiTableEnd()
+    return "|}\n"
+end
 
-    -- sort buttons
-    local sorts = {{"HP↑","hp_desc"},{"HP↓","hp_asc"},{"Price↑","price_desc"},{"Price↓","price_asc"},{"Tier","tier"},{"Rarity","rarity"}}
-    for i, s in ipairs(sorts) do
-        local b=Instance.new("TextButton",filterBar)
-        b.Size=UDim2.new(0,52,1,0) b.BackgroundColor3=C.Card b.Text=s[1]
-        b.TextColor3=C.Sub b.TextSize=9 b.Font=Enum.Font.GothamBold b.BorderSizePixel=0
-        Instance.new("UICorner",b).CornerRadius=UDim.new(0,5)
-        b.MouseButton1Click:Connect(function()
-            sortMode=s[2]
-            for _, btn in pairs(filterBar:GetChildren()) do
-                if btn:IsA("TextButton") then
-                    btn.BackgroundColor3=C.Card btn.TextColor3=C.Sub
+local function wikiRow(cells)
+    local t = "|-\n"
+    for _, c in ipairs(cells) do
+        t = t .. "| "..tostring(c).."\n"
+    end
+    return t
+end
+
+local result = ""
+
+-- HELMETS
+if ResArmor then
+    result = result .. wikiHeader("Helmets")
+    result = result .. wikiTableStart({"ID","Tier","HP","HP Max","Price","Weight","Size","Special"})
+    local helmets = sortedItems(ResArmor, function(v) return v.Class=="Helmet" end)
+    for _, v in ipairs(helmets) do
+        result = result .. wikiRow({
+            v.ID or "?",
+            "T"..(v.T or "?"),
+            v.HP or "?",
+            v.HPMax or "?",
+            v.Price or "?",
+            v.BaseWeight or "?",
+            v.Size or "?",
+            v.IsSpecial and "Yes" or "No",
+        })
+    end
+    result = result .. wikiTableEnd() .. "\n"
+
+    -- BREASTPLATES
+    result = result .. wikiHeader("Breastplates")
+    result = result .. wikiTableStart({"ID","Tier","HP","HP Max","Price","Weight","Size","Special"})
+    local breastplates = sortedItems(ResArmor, function(v) return v.Class=="Breastplate" end)
+    for _, v in ipairs(breastplates) do
+        result = result .. wikiRow({
+            v.ID or "?",
+            "T"..(v.T or "?"),
+            v.HP or "?",
+            v.HPMax or "?",
+            v.Price or "?",
+            v.BaseWeight or "?",
+            v.Size or "?",
+            v.IsSpecial and "Yes" or "No",
+        })
+    end
+    result = result .. wikiTableEnd() .. "\n"
+end
+
+-- SCROLLS
+if ResScrolls then
+    result = result .. wikiHeader("Scrolls")
+    result = result .. wikiTableStart({"ID","Weapon Class","Skill","Rarity","Power","Price"})
+    local scrolls = sortedItems(ResScrolls, nil, function(a,b)
+        if (a.WeaponClass or "") ~= (b.WeaponClass or "") then
+            return (a.WeaponClass or "") < (b.WeaponClass or "")
+        end
+        return (a.Power or 0) < (b.Power or 0)
+    end)
+    for _, v in ipairs(scrolls) do
+        result = result .. wikiRow({
+            v.ID or "?",
+            v.WeaponClass or "?",
+            v.SkillId or "?",
+            getRarity(v.Rarity),
+            v.Power or "?",
+            v.Price or "?",
+        })
+    end
+    result = result .. wikiTableEnd() .. "\n"
+end
+
+-- WEAPONS
+if ResWeapon then
+    local weaponClasses = {"Sword","Heavy","Staff","Bow","Fist","DualWield"}
+    for _, class in ipairs(weaponClasses) do
+        local weapons = sortedItems(ResWeapon, function(v) return v.Class==class end)
+        if #weapons > 0 then
+            result = result .. wikiHeader(class.." Weapons")
+            result = result .. wikiTableStart({"ID","Tier","Attack Damage","Price","Weight","Blueprint","Special"})
+            for _, v in ipairs(weapons) do
+                if v.ID ~= "SuperHanBro" and v.ID ~= "Sword_Test" then
+                    result = result .. wikiRow({
+                        v.ID or "?",
+                        "T"..(v.T or "?"),
+                        v.AttackDamage or "?",
+                        v.Price or "?",
+                        v.BaseWeight or "?",
+                        v.Blueprint and "Yes" or "No",
+                        v.IsSpecial and "Yes" or "No",
+                    })
                 end
             end
-            b.BackgroundColor3=C.Accent b.TextColor3=Color3.new(1,1,1)
-            refresh()
-        end)
-    end
-
-    refresh()
-    return page, refresh, activeFilters
-end
-
--- ── Row builders ──────────────────────────────────────────────────────────────
-local function armorRow(parent, item, index)
-    local row=Instance.new("Frame",parent)
-    row.Size=UDim2.new(1,-4,0,28) row.LayoutOrder=index row.BorderSizePixel=0
-    row.BackgroundColor3=index%2==0 and C.Row or C.RowAlt
-    Instance.new("UICorner",row).CornerRadius=UDim.new(0,4)
-
-    local classCol = CLASS_COLOR[item.Class] or C.Sub
-    local classIcon = CLASS_ICON[item.Class] or "?"
-
-    -- class dot
-    local dot=Instance.new("Frame",row)
-    dot.Size=UDim2.new(0,6,0,6) dot.Position=UDim2.new(0,4,0.5,-3)
-    dot.BackgroundColor3=classCol dot.BorderSizePixel=0
-    Instance.new("UICorner",dot).CornerRadius=UDim.new(1,0)
-
-    -- name
-    local nameLbl=Instance.new("TextLabel",row)
-    nameLbl.Size=UDim2.new(0,170,1,0) nameLbl.Position=UDim2.new(0,14,0,0)
-    nameLbl.BackgroundTransparency=1 nameLbl.Text=classIcon.." "..item.ID
-    nameLbl.TextColor3=C.Text nameLbl.TextSize=10 nameLbl.Font=Enum.Font.GothamBold
-    nameLbl.TextXAlignment=Enum.TextXAlignment.Left nameLbl.TextTruncate=Enum.TextTruncate.AtEnd
-
-    -- class badge
-    local classBadge=Instance.new("TextLabel",row)
-    classBadge.Size=UDim2.new(0,68,0,17) classBadge.Position=UDim2.new(0,188,0.5,-8)
-    classBadge.BackgroundColor3=Color3.fromRGB(22,22,34) classBadge.BorderSizePixel=0
-    classBadge.Text=item.Class or "?" classBadge.TextColor3=classCol
-    classBadge.TextSize=9 classBadge.Font=Enum.Font.GothamBold
-    Instance.new("UICorner",classBadge).CornerRadius=UDim.new(0,8)
-    Instance.new("UIStroke",classBadge).Color=classCol
-
-    -- tier
-    local tierLbl2=Instance.new("TextLabel",row)
-    tierLbl2.Size=UDim2.new(0,28,1,0) tierLbl2.Position=UDim2.new(0,260,0,0)
-    tierLbl2.BackgroundTransparency=1 tierLbl2.Text="T"..(item.T or "?")
-    tierLbl2.TextColor3=C.Gold tierLbl2.TextSize=10 tierLbl2.Font=Enum.Font.GothamBold
-    tierLbl2.TextXAlignment=Enum.TextXAlignment.Center
-
-    -- HP
-    local hpLbl=Instance.new("TextLabel",row)
-    hpLbl.Size=UDim2.new(0,50,1,0) hpLbl.Position=UDim2.new(0,292,0,0)
-    hpLbl.BackgroundTransparency=1 hpLbl.Text="❤️ "..(item.HP or "?")
-    hpLbl.TextColor3=Color3.fromRGB(100,220,100) hpLbl.TextSize=10 hpLbl.Font=Enum.Font.Gotham
-    hpLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    -- price
-    local priceLbl=Instance.new("TextLabel",row)
-    priceLbl.Size=UDim2.new(0,50,1,0) priceLbl.Position=UDim2.new(0,346,0,0)
-    priceLbl.BackgroundTransparency=1 priceLbl.Text="💰 "..(item.Price or "?")
-    priceLbl.TextColor3=C.Gold priceLbl.TextSize=10 priceLbl.Font=Enum.Font.Gotham
-    priceLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    -- weight
-    local wtLbl=Instance.new("TextLabel",row)
-    wtLbl.Size=UDim2.new(0,40,1,0) wtLbl.Position=UDim2.new(0,400,0,0)
-    wtLbl.BackgroundTransparency=1 wtLbl.Text="⚖️"..(item.BaseWeight or "?")
-    wtLbl.TextColor3=C.Sub wtLbl.TextSize=9 wtLbl.Font=Enum.Font.Gotham
-    wtLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    return row
-end
-
-local function scrollRow(parent, item, index)
-    local row=Instance.new("Frame",parent)
-    row.Size=UDim2.new(1,-4,0,28) row.LayoutOrder=index row.BorderSizePixel=0
-    row.BackgroundColor3=index%2==0 and C.Row or C.RowAlt
-    Instance.new("UICorner",row).CornerRadius=UDim.new(0,4)
-
-    local wc = item.WeaponClass or "?"
-    local classCol = CLASS_COLOR[wc] or C.Sub
-    local classIcon = CLASS_ICON[wc] or "📜"
-
-    local dot=Instance.new("Frame",row)
-    dot.Size=UDim2.new(0,6,0,6) dot.Position=UDim2.new(0,4,0.5,-3)
-    dot.BackgroundColor3=classCol dot.BorderSizePixel=0
-    Instance.new("UICorner",dot).CornerRadius=UDim.new(1,0)
-
-    local nameLbl=Instance.new("TextLabel",row)
-    nameLbl.Size=UDim2.new(0,120,1,0) nameLbl.Position=UDim2.new(0,14,0,0)
-    nameLbl.BackgroundTransparency=1 nameLbl.Text=classIcon.." "..item.ID
-    nameLbl.TextColor3=C.Text nameLbl.TextSize=10 nameLbl.Font=Enum.Font.GothamBold
-    nameLbl.TextXAlignment=Enum.TextXAlignment.Left nameLbl.TextTruncate=Enum.TextTruncate.AtEnd
-
-    -- weapon class badge
-    local wBadge=Instance.new("TextLabel",row)
-    wBadge.Size=UDim2.new(0,52,0,17) wBadge.Position=UDim2.new(0,138,0.5,-8)
-    wBadge.BackgroundColor3=Color3.fromRGB(22,22,34) wBadge.BorderSizePixel=0
-    wBadge.Text=wc wBadge.TextColor3=classCol
-    wBadge.TextSize=9 wBadge.Font=Enum.Font.GothamBold
-    Instance.new("UICorner",wBadge).CornerRadius=UDim.new(0,8)
-    Instance.new("UIStroke",wBadge).Color=classCol
-
-    -- skill
-    local skillLbl=Instance.new("TextLabel",row)
-    skillLbl.Size=UDim2.new(0,150,1,0) skillLbl.Position=UDim2.new(0,196,0,0)
-    skillLbl.BackgroundTransparency=1 skillLbl.Text="🎯 "..(item.SkillId or "?")
-    skillLbl.TextColor3=C.Sub skillLbl.TextSize=9 skillLbl.Font=Enum.Font.Gotham
-    skillLbl.TextXAlignment=Enum.TextXAlignment.Left skillLbl.TextTruncate=Enum.TextTruncate.AtEnd
-
-    -- rarity badge
-    local rb = makeRarityBadge(row, item.Rarity)
-    rb.Position=UDim2.new(1,-80,0.5,-8)
-
-    -- power
-    local pwrLbl=Instance.new("TextLabel",row)
-    pwrLbl.Size=UDim2.new(0,50,1,0) pwrLbl.Position=UDim2.new(0,352,0,0)
-    pwrLbl.BackgroundTransparency=1 pwrLbl.Text="⚡"..(item.Power or "?")
-    pwrLbl.TextColor3=Color3.fromRGB(255,200,50) pwrLbl.TextSize=10 pwrLbl.Font=Enum.Font.GothamBold
-    pwrLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    return row
-end
-
-local function weaponRow(parent, item, index)
-    local row=Instance.new("Frame",parent)
-    row.Size=UDim2.new(1,-4,0,28) row.LayoutOrder=index row.BorderSizePixel=0
-    row.BackgroundColor3=index%2==0 and C.Row or C.RowAlt
-    Instance.new("UICorner",row).CornerRadius=UDim.new(0,4)
-
-    local classCol = CLASS_COLOR[item.Class] or C.Sub
-    local classIcon = CLASS_ICON[item.Class] or "?"
-
-    local dot=Instance.new("Frame",row)
-    dot.Size=UDim2.new(0,6,0,6) dot.Position=UDim2.new(0,4,0.5,-3)
-    dot.BackgroundColor3=classCol dot.BorderSizePixel=0
-    Instance.new("UICorner",dot).CornerRadius=UDim.new(1,0)
-
-    local nameLbl=Instance.new("TextLabel",row)
-    nameLbl.Size=UDim2.new(0,160,1,0) nameLbl.Position=UDim2.new(0,14,0,0)
-    nameLbl.BackgroundTransparency=1 nameLbl.Text=classIcon.." "..item.ID
-    nameLbl.TextColor3=C.Text nameLbl.TextSize=10 nameLbl.Font=Enum.Font.GothamBold
-    nameLbl.TextXAlignment=Enum.TextXAlignment.Left nameLbl.TextTruncate=Enum.TextTruncate.AtEnd
-
-    local classBadge=Instance.new("TextLabel",row)
-    classBadge.Size=UDim2.new(0,62,0,17) classBadge.Position=UDim2.new(0,178,0.5,-8)
-    classBadge.BackgroundColor3=Color3.fromRGB(22,22,34) classBadge.BorderSizePixel=0
-    classBadge.Text=item.Class or "?" classBadge.TextColor3=classCol
-    classBadge.TextSize=9 classBadge.Font=Enum.Font.GothamBold
-    Instance.new("UICorner",classBadge).CornerRadius=UDim.new(0,8)
-    Instance.new("UIStroke",classBadge).Color=classCol
-
-    local tierLbl2=Instance.new("TextLabel",row)
-    tierLbl2.Size=UDim2.new(0,28,1,0) tierLbl2.Position=UDim2.new(0,244,0,0)
-    tierLbl2.BackgroundTransparency=1 tierLbl2.Text="T"..(item.T or "?")
-    tierLbl2.TextColor3=C.Gold tierLbl2.TextSize=10 tierLbl2.Font=Enum.Font.GothamBold
-    tierLbl2.TextXAlignment=Enum.TextXAlignment.Center
-
-    local atkLbl=Instance.new("TextLabel",row)
-    atkLbl.Size=UDim2.new(0,55,1,0) atkLbl.Position=UDim2.new(0,276,0,0)
-    atkLbl.BackgroundTransparency=1 atkLbl.Text="⚔️ "..(item.AttackDamage or "?")
-    atkLbl.TextColor3=Color3.fromRGB(255,140,80) atkLbl.TextSize=10 atkLbl.Font=Enum.Font.Gotham
-    atkLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    local priceLbl=Instance.new("TextLabel",row)
-    priceLbl.Size=UDim2.new(0,50,1,0) priceLbl.Position=UDim2.new(0,334,0,0)
-    priceLbl.BackgroundTransparency=1 priceLbl.Text="💰 "..(item.Price or "?")
-    priceLbl.TextColor3=C.Gold priceLbl.TextSize=10 priceLbl.Font=Enum.Font.Gotham
-    priceLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    local wtLbl=Instance.new("TextLabel",row)
-    wtLbl.Size=UDim2.new(0,40,1,0) wtLbl.Position=UDim2.new(0,388,0,0)
-    wtLbl.BackgroundTransparency=1 wtLbl.Text="⚖️"..(item.BaseWeight or "?")
-    wtLbl.TextColor3=C.Sub wtLbl.TextSize=9 wtLbl.Font=Enum.Font.Gotham
-    wtLbl.TextXAlignment=Enum.TextXAlignment.Left
-
-    return row
-end
-
--- ── Build pages ───────────────────────────────────────────────────────────────
--- Helmets (filtered from ResArmor)
-local helmetData = {}
-local armorData  = {}
-if ResArmor then
-    for k,v in pairs(ResArmor) do
-        if type(v)=="table" and v.ID then
-            if v.Class=="Helmet" then helmetData[k]=v
-            elseif v.Class=="Breastplate" then armorData[k]=v end
+            result = result .. wikiTableEnd() .. "\n"
         end
     end
 end
 
-local helmetCols = {
-    {name="NAME",w=184},{name="CLASS",w=76},{name="T",w=28},
-    {name="HP",w=54},{name="PRICE",w=54},{name="WEIGHT",w=46}
-}
-local armorCols = helmetCols
-local scrollCols = {
-    {name="NAME",w=136},{name="CLASS",w=60},{name="SKILL",w=154},
-    {name="PWR",w=54},{name="RARITY",w=80}
-}
-local weaponCols = {
-    {name="NAME",w=178},{name="CLASS",w=70},{name="T",w=28},
-    {name="ATK",w=58},{name="PRICE",w=54},{name="WEIGHT",w=46}
-}
-
-local helmetPage = buildListPage(helmetData, helmetCols, armorRow)
-local armorPage  = buildListPage(armorData,  armorCols,  armorRow)
-local scrollPage = buildListPage(ResScrolls or {}, scrollCols, scrollRow)
-local weaponPage = buildListPage(ResWeapon  or {}, weaponCols, weaponRow)
-
--- ── Tab switching ─────────────────────────────────────────────────────────────
-local tabs={
-    Helmets={helmetPage,helmetTab,helmetTabL},
-    Armor={armorPage,armorTab,armorTabL},
-    Scrolls={scrollPage,scrollTab,scrollTabL},
-    Weapons={weaponPage,weaponTab,weaponTabL},
-}
-local function switchTab(n)
-    for k,v in pairs(tabs) do
-        v[1].Visible=(k==n)
-        TweenService:Create(v[2],TweenInfo.new(0.15),{BackgroundColor3=(k==n) and C.Accent or C.Card}):Play()
-        v[3].TextColor3=(k==n) and C.Text or C.Sub
-    end
-end
-helmetTab.MouseButton1Click:Connect(function()  switchTab("Helmets") end)
-armorTab.MouseButton1Click:Connect(function()   switchTab("Armor")   end)
-scrollTab.MouseButton1Click:Connect(function()  switchTab("Scrolls") end)
-weaponTab.MouseButton1Click:Connect(function()  switchTab("Weapons") end)
-switchTab("Helmets")
-
--- ── Drag ──────────────────────────────────────────────────────────────────────
-do
-    local drag,ds,wp
-    TB.InputBegan:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true ds=i.Position wp=Win.Position end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if drag and i.UserInputType==Enum.UserInputType.MouseMovement then
-            local d=i.Position-ds
-            Win.Position=UDim2.new(wp.X.Scale,wp.X.Offset+d.X,wp.Y.Scale,wp.Y.Offset+d.Y)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(i)
-        if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end
-    end)
+if result == "" then
+    result = debugInfo .. "\nNo data was generated!"
 end
 
-print("[IRS Item Viewer] Loaded! Helmets · Armor · Scrolls · Weapons")
+setclipboard(result)
+print("Done! Length: " .. #result)
